@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>유튜브 댓글 분석 대시보드</title>
+    <!-- 차트 라이브러리 및 CSV 파싱 라이브러리 로드 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        /* 기본 리셋 및 전역 스타일 */
+        body {
+            background-color: #050505;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 24px;
+            box-sizing: border-box;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 메인 컨테이너 그리드 레이아웃 */
+        .dashboard-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            flex: 1;
+        }
+
+        /* 대시보드 헤더 */
+        header {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        h1 {
+            margin: 0;
+            font-size: 2.2rem;
+            background: linear-gradient(90deg, #4A90E2, #9013FE);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: inline-block;
+        }
+
+        /* 글래스모피즘 카드 공통 스타일 */
+        .glass-card {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            margin-top: 0;
+            margin-bottom: 16px;
+            color: #e0e0e0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 8px;
+        }
+
+        /* 요약 카드 영역 */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+        }
+        .summary-item {
+            text-align: center;
+            padding: 20px;
+        }
+        .summary-value {
+            font-size: 2rem;
+            font-weight: bold;
+            background: linear-gradient(90deg, #4A90E2, #9013FE);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-top: 10px;
+        }
+        .summary-label {
+            font-size: 0.9rem;
+            color: #a0a0a0;
+        }
+
+        /* 차트 영역 */
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+
+        /* 테이블 영역 */
+        .tables-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+        .table-wrapper {
+            overflow-x: auto;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        th {
+            background-color: rgba(255, 255, 255, 0.02);
+            position: sticky;
+            top: 0;
+            color: #4A90E2;
+            font-weight: 600;
+        }
+        tr:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+        
+        /* 스크롤바 커스텀 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+
+        /* 로딩 화면 */
+        #loading {
+            text-align: center;
+            font-size: 1.2rem;
+            color: #4A90E2;
+            padding: 50px;
+        }
+
+        /* 푸터 */
+        .footer {
+            text-align: center;
+            padding: 24px 0 0 0;
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.4);
+            margin-top: auto;
+        }
+
+        /* 반응형 디자인 */
+        @media (max-width: 900px) {
+            .charts-grid, .tables-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard-container">
+        <header>
+            <h1>유튜브 댓글 분석 대시보드</h1>
+            <p style="color: #a0a0a0; margin-top: 8px;">시청자 반응 및 참여도 종합 데이터 시각화</p>
+        </header>
+
+        <div id="loading">데이터를 불러오고 분석하는 중입니다... 잠시만 기다려주세요.</div>
+
+        <div id="dashboard-content" style="display: none; display: flex; flex-direction: column; gap: 24px;">
+            <!-- 1. 요약 카드 -->
+            <div class="summary-grid">
+                <div class="glass-card summary-item">
+                    <div class="summary-label">총 댓글 수</div>
+                    <div class="summary-value" id="total-comments">0</div>
+                </div>
+                <div class="glass-card summary-item">
+                    <div class="summary-label">평균 좋아요 수</div>
+                    <div class="summary-value" id="avg-likes">0</div>
+                </div>
+                <div class="glass-card summary-item">
+                    <div class="summary-label">총 답글 수</div>
+                    <div class="summary-value" id="total-replies">0</div>
+                </div>
+                <div class="glass-card summary-item">
+                    <div class="summary-label">좋아요 0인 댓글 비율</div>
+                    <div class="summary-value" id="zero-likes-ratio">0%</div>
+                </div>
+            </div>
+
+            <!-- 2. 차트 영역 -->
+            <div class="charts-grid">
+                <div class="glass-card">
+                    <h3 class="card-title">일별 댓글 추이</h3>
+                    <div class="chart-container">
+                        <canvas id="dailyTrendChart"></canvas>
+                    </div>
+                </div>
+                <div class="glass-card">
+                    <h3 class="card-title">시간대별 댓글 분포</h3>
+                    <div class="chart-container">
+                        <canvas id="hourlyDistChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. 테이블 영역 -->
+            <div class="tables-grid">
+                <div class="glass-card">
+                    <h3 class="card-title">🔥 좋아요 TOP 10 댓글</h3>
+                    <div class="table-wrapper">
+                        <table id="topLikesTable">
+                            <thead>
+                                <tr>
+                                    <th style="width: 20%;">작성자</th>
+                                    <th style="width: 50%;">댓글 내용</th>
+                                    <th style="width: 15%; text-align: right;">좋아요</th>
+                                    <th style="width: 15%; text-align: right;">답글수</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- 데이터 스크립트로 렌더링 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="glass-card">
+                    <h3 class="card-title">💬 답글 많은 TOP 5 댓글</h3>
+                    <div class="table-wrapper">
+                        <table id="topRepliesTable">
+                            <thead>
+                                <tr>
+                                    <th style="width: 25%;">작성자</th>
+                                    <th style="width: 60%;">댓글 내용</th>
+                                    <th style="width: 15%; text-align: right;">답글수</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- 데이터 스크립트로 렌더링 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            © [윤에듀케이션]. All Rights Reserved.
+        </div>
+    </div>
+
+    <script>
+        // 공통 차트 설정 (글래스모피즘 어두운 배경에 맞춤)
+        Chart.defaults.color = 'rgba(255, 255, 255, 0.6)';
+        Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.1)';
+
+        // CSV 데이터 URL
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRKcbxFoDnGc-PlQfOv09aR0kWPqEiMMnvLF8SXceBVgwy5I2pihlBNu15tj9DOxi2epVSkw_EBKPRm/pub?gid=0&single=true&output=csv';
+
+        // 데이터 파싱 및 초기화
+        Papa.parse(CSV_URL, {
+            download: true,
+            header: true,
+            skipEmptyLines: true,
+            complete: function(results) {
+                const data = results.data;
+                processData(data);
+                
+                // 로딩 숨기고 대시보드 표시
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('dashboard-content').style.display = 'flex';
+            },
+            error: function(error) {
+                document.getElementById('loading').innerText = '데이터를 불러오는 중 오류가 발생했습니다. 링크를 확인해주세요.';
+                document.getElementById('loading').style.color = '#ff6b6b';
+            }
+        });
+
+        // 텍스트 자르기 유틸리티 함수
+        function truncateText(text, maxLength = 50) {
+            if (!text) return '';
+            return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+        }
+
+        function processData(data) {
+            let totalLikes = 0;
+            let totalReplies = 0;
+            let zeroLikesCount = 0;
+            
+            const dailyCounts = {};
+            const hourlyCounts = Array(24).fill(0);
+
+            // 1. 기본 통계 및 차트용 데이터 수집
+            data.forEach(row => {
+                const likes = parseInt(row['좋아요']) || 0;
+                const replies = parseInt(row['답글수']) || 0;
+                const dateStr = row['작성일시'];
+
+                totalLikes += likes;
+                totalReplies += replies;
+                if (likes === 0) zeroLikesCount++;
+
+                if (dateStr) {
+                    const dateObj = new Date(dateStr);
+                    // 일별 추이 (YYYY-MM-DD)
+                    const day = dateStr.substring(0, 10);
+                    dailyCounts[day] = (dailyCounts[day] || 0) + 1;
+                    
+                    // 시간대별 분포 (0~23)
+                    const hour = dateObj.getHours();
+                    if (!isNaN(hour)) {
+                        hourlyCounts[hour]++;
+                    }
+                }
+            });
+
+            const totalComments = data.length;
+            const avgLikes = totalComments > 0 ? (totalLikes / totalComments).toFixed(1) : 0;
+            const zeroLikesRatio = totalComments > 0 ? ((zeroLikesCount / totalComments) * 100).toFixed(1) : 0;
+
+            // 2. 요약 카드 업데이트
+            document.getElementById('total-comments').innerText = totalComments.toLocaleString();
+            document.getElementById('avg-likes').innerText = avgLikes;
+            document.getElementById('total-replies').innerText = totalReplies.toLocaleString();
+            document.getElementById('zero-likes-ratio').innerText = zeroLikesRatio + '%';
+
+            // 3. 차트 렌더링
+            renderDailyChart(dailyCounts);
+            renderHourlyChart(hourlyCounts);
+
+            // 4. 테이블 렌더링을 위한 정렬
+            // 좋아요 TOP 10
+            const topLikes = [...data].sort((a, b) => (parseInt(b['좋아요']) || 0) - (parseInt(a['좋아요']) || 0)).slice(0, 10);
+            renderTopLikesTable(topLikes);
+
+            // 답글수 TOP 5
+            const topReplies = [...data].sort((a, b) => (parseInt(b['답글수']) || 0) - (parseInt(a['답글수']) || 0)).slice(0, 5);
+            renderTopRepliesTable(topReplies);
+        }
+
+        function renderDailyChart(dailyCounts) {
+            // 날짜순 정렬
+            const sortedDates = Object.keys(dailyCounts).sort();
+            const counts = sortedDates.map(date => dailyCounts[date]);
+
+            const ctx = document.getElementById('dailyTrendChart').getContext('2d');
+            
+            // 그라데이션 채우기 효과
+            let gradient = ctx.createLinearGradient(0, 0, 0, 300);
+            gradient.addColorStop(0, 'rgba(74, 144, 226, 0.5)');
+            gradient.addColorStop(1, 'rgba(74, 144, 226, 0.0)');
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: sortedDates,
+                    datasets: [{
+                        label: '댓글 수',
+                        data: counts,
+                        borderColor: '#4A90E2',
+                        backgroundColor: gradient,
+                        borderWidth: 2,
+                        pointBackgroundColor: '#9013FE',
+                        pointBorderColor: '#fff',
+                        pointRadius: 4,
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { mode: 'index', intersect: false }
+                    },
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        }
+
+        function renderHourlyChart(hourlyCounts) {
+            const labels = Array.from({length: 24}, (_, i) => `${i}시`);
+            const ctx = document.getElementById('hourlyDistChart').getContext('2d');
+            
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '댓글 수',
+                        data: hourlyCounts,
+                        backgroundColor: 'rgba(144, 19, 254, 0.7)',
+                        hoverBackgroundColor: '#9013FE',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        }
+
+        function renderTopLikesTable(data) {
+            const tbody = document.querySelector('#topLikesTable tbody');
+            tbody.innerHTML = '';
+            data.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${row['작성자'] || '익명'}</td>
+                    <td title="${row['댓글내용']}">${truncateText(row['댓글내용'], 50)}</td>
+                    <td style="text-align: right; color: #4A90E2; font-weight: bold;">${(parseInt(row['좋아요']) || 0).toLocaleString()}</td>
+                    <td style="text-align: right;">${(parseInt(row['답글수']) || 0).toLocaleString()}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function renderTopRepliesTable(data) {
+            const tbody = document.querySelector('#topRepliesTable tbody');
+            tbody.innerHTML = '';
+            data.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${row['작성자'] || '익명'}</td>
+                    <td title="${row['댓글내용']}">${truncateText(row['댓글내용'], 50)}</td>
+                    <td style="text-align: right; color: #9013FE; font-weight: bold;">${(parseInt(row['답글수']) || 0).toLocaleString()}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    </script>
+</body>
+</html>
